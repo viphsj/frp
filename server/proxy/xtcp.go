@@ -31,8 +31,10 @@ type XtcpProxy struct {
 }
 
 func (pxy *XtcpProxy) Run() (remoteAddr string, err error) {
+	xl := pxy.xl
+
 	if pxy.rc.NatHoleController == nil {
-		pxy.Error("udp port for xtcp is not specified.")
+		xl.Error("udp port for xtcp is not specified.")
 		err = fmt.Errorf("xtcp is not supported in frps")
 		return
 	}
@@ -42,18 +44,40 @@ func (pxy *XtcpProxy) Run() (remoteAddr string, err error) {
 			select {
 			case <-pxy.closeCh:
 				break
-			case sid := <-sidCh:
-				workConn, errRet := pxy.GetWorkConnFromPool()
+			case sidRequest := <-sidCh:
+				sr := sidRequest
+				workConn, errRet := pxy.GetWorkConnFromPool(nil, nil)
 				if errRet != nil {
 					continue
 				}
 				m := &msg.NatHoleSid{
-					Sid: sid,
+					Sid: sr.Sid,
 				}
 				errRet = msg.WriteMsg(workConn, m)
 				if errRet != nil {
-					pxy.Warn("write nat hole sid package error, %v", errRet)
+					xl.Warn("write nat hole sid package error, %v", errRet)
+					workConn.Close()
+					break
 				}
+
+				go func() {
+					raw, errRet := msg.ReadMsg(workConn)
+					if errRet != nil {
+						xl.Warn("read nat hole client ok package error: %v", errRet)
+						workConn.Close()
+						return
+					}
+					if _, ok := raw.(*msg.NatHoleClientDetectOK); !ok {
+						xl.Warn("read nat hole client ok package format error")
+						workConn.Close()
+						return
+					}
+
+					select {
+					case sr.NotifyCh <- struct{}{}:
+					default:
+					}
+				}()
 			}
 		}
 	}()

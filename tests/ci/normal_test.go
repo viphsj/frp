@@ -182,6 +182,21 @@ func TestHttp(t *testing.T) {
 		assert.Equal("true", header.Get("X-Header-Set"))
 	}
 
+	// wildcard_http
+	// test.frp1.com match *.frp1.com
+	code, body, _, err = util.SendHttpMsg("GET", fmt.Sprintf("http://127.0.0.1:%d", consts.TEST_HTTP_FRP_PORT), "test.frp1.com", nil, "")
+	if assert.NoError(err) {
+		assert.Equal(200, code)
+		assert.Equal(consts.TEST_HTTP_NORMAL_STR, body)
+	}
+
+	// new.test.frp1.com also match *.frp1.com
+	code, body, _, err = util.SendHttpMsg("GET", fmt.Sprintf("http://127.0.0.1:%d", consts.TEST_HTTP_FRP_PORT), "new.test.frp1.com", nil, "")
+	if assert.NoError(err) {
+		assert.Equal(200, code)
+		assert.Equal(consts.TEST_HTTP_NORMAL_STR, body)
+	}
+
 	// subhost01
 	code, body, _, err = util.SendHttpMsg("GET", fmt.Sprintf("http://127.0.0.1:%d", consts.TEST_HTTP_FRP_PORT), "test01.sub.com", nil, "")
 	if assert.NoError(err) {
@@ -194,6 +209,17 @@ func TestHttp(t *testing.T) {
 	if assert.NoError(err) {
 		assert.Equal(200, code)
 		assert.Equal("test02.sub.com", body)
+	}
+}
+
+func TestTcpMux(t *testing.T) {
+	assert := assert.New(t)
+
+	conn, err := gnet.DialTcpByProxy(fmt.Sprintf("http://%s:%d", "127.0.0.1", consts.TEST_TCP_MUX_FRP_PORT), "tunnel1")
+	if assert.NoError(err) {
+		res, err := util.SendTcpMsgByConn(conn, consts.TEST_TCP_ECHO_STR)
+		assert.NoError(err)
+		assert.Equal(consts.TEST_TCP_ECHO_STR, res)
 	}
 }
 
