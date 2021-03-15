@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/fatedier/frp/client"
-	frpNet "github.com/fatedier/frp/utils/net"
 )
 
 func GetProxyStatus(statusAddr string, user string, passwd string, name string) (status *client.ProxyStatusResp, err error) {
@@ -28,51 +27,56 @@ func GetProxyStatus(statusAddr string, user string, passwd string, name string) 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return status, err
-	} else {
-		if resp.StatusCode != 200 {
-			return status, fmt.Errorf("admin api status code [%d]", resp.StatusCode)
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return status, err
-		}
-		allStatus := &client.StatusResp{}
-		err = json.Unmarshal(body, &allStatus)
-		if err != nil {
-			return status, fmt.Errorf("unmarshal http response error: %s", strings.TrimSpace(string(body)))
-		}
-		for _, s := range allStatus.Tcp {
-			if s.Name == name {
-				return &s, nil
-			}
-		}
-		for _, s := range allStatus.Udp {
-			if s.Name == name {
-				return &s, nil
-			}
-		}
-		for _, s := range allStatus.Http {
-			if s.Name == name {
-				return &s, nil
-			}
-		}
-		for _, s := range allStatus.Https {
-			if s.Name == name {
-				return &s, nil
-			}
-		}
-		for _, s := range allStatus.Stcp {
-			if s.Name == name {
-				return &s, nil
-			}
-		}
-		for _, s := range allStatus.Xtcp {
-			if s.Name == name {
-				return &s, nil
-			}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return status, fmt.Errorf("admin api status code [%d]", resp.StatusCode)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return status, err
+	}
+	allStatus := &client.StatusResp{}
+	err = json.Unmarshal(body, &allStatus)
+	if err != nil {
+		return status, fmt.Errorf("unmarshal http response error: %s", strings.TrimSpace(string(body)))
+	}
+	for _, s := range allStatus.TCP {
+		if s.Name == name {
+			return &s, nil
 		}
 	}
+	for _, s := range allStatus.UDP {
+		if s.Name == name {
+			return &s, nil
+		}
+	}
+	for _, s := range allStatus.HTTP {
+		if s.Name == name {
+			return &s, nil
+		}
+	}
+	for _, s := range allStatus.HTTPS {
+		if s.Name == name {
+			return &s, nil
+		}
+	}
+	for _, s := range allStatus.STCP {
+		if s.Name == name {
+			return &s, nil
+		}
+	}
+	for _, s := range allStatus.XTCP {
+		if s.Name == name {
+			return &s, nil
+		}
+	}
+	for _, s := range allStatus.SUDP {
+		if s.Name == name {
+			return &s, nil
+		}
+	}
+
 	return status, errors.New("no proxy status found")
 }
 
@@ -87,27 +91,27 @@ func ReloadConf(reloadAddr string, user string, passwd string) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
-	} else {
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("admin api status code [%d]", resp.StatusCode)
-		}
-		defer resp.Body.Close()
-		io.Copy(ioutil.Discard, resp.Body)
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("admin api status code [%d]", resp.StatusCode)
+	}
+	io.Copy(ioutil.Discard, resp.Body)
 	return nil
 }
 
-func SendTcpMsg(addr string, msg string) (res string, err error) {
-	c, err := frpNet.ConnectTcpServer(addr)
+func SendTCPMsg(addr string, msg string) (res string, err error) {
+	c, err := net.Dial("tcp", addr)
 	if err != nil {
 		err = fmt.Errorf("connect to tcp server error: %v", err)
 		return
 	}
 	defer c.Close()
-	return SendTcpMsgByConn(c, msg)
+	return SendTCPMsgByConn(c, msg)
 }
 
-func SendTcpMsgByConn(c net.Conn, msg string) (res string, err error) {
+func SendTCPMsgByConn(c net.Conn, msg string) (res string, err error) {
 	timer := time.Now().Add(5 * time.Second)
 	c.SetDeadline(timer)
 	c.Write([]byte(msg))
@@ -121,7 +125,7 @@ func SendTcpMsgByConn(c net.Conn, msg string) (res string, err error) {
 	return string(buf[:n]), nil
 }
 
-func SendUdpMsg(addr string, msg string) (res string, err error) {
+func SendUDPMsg(addr string, msg string) (res string, err error) {
 	udpAddr, errRet := net.ResolveUDPAddr("udp", addr)
 	if errRet != nil {
 		err = fmt.Errorf("resolve udp addr error: %v", err)
@@ -139,6 +143,7 @@ func SendUdpMsg(addr string, msg string) (res string, err error) {
 		return
 	}
 
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := make([]byte, 2048)
 	n, errRet := conn.Read(buf)
 	if errRet != nil {
@@ -148,7 +153,7 @@ func SendUdpMsg(addr string, msg string) (res string, err error) {
 	return string(buf[:n]), nil
 }
 
-func SendHttpMsg(method, urlStr string, host string, headers map[string]string, proxy string) (code int, body string, header http.Header, err error) {
+func SendHTTPMsg(method, urlStr string, host string, headers map[string]string, proxy string) (code int, body string, header http.Header, err error) {
 	req, errRet := http.NewRequest(method, urlStr, nil)
 	if errRet != nil {
 		err = errRet

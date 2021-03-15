@@ -17,22 +17,24 @@ package proxy
 import (
 	"fmt"
 
-	"github.com/fatedier/frp/models/config"
-	"github.com/fatedier/frp/models/msg"
+	"github.com/fatedier/frp/pkg/config"
+	"github.com/fatedier/frp/pkg/msg"
 
 	"github.com/fatedier/golib/errors"
 )
 
-type XtcpProxy struct {
+type XTCPProxy struct {
 	*BaseProxy
-	cfg *config.XtcpProxyConf
+	cfg *config.XTCPProxyConf
 
 	closeCh chan struct{}
 }
 
-func (pxy *XtcpProxy) Run() (remoteAddr string, err error) {
+func (pxy *XTCPProxy) Run() (remoteAddr string, err error) {
+	xl := pxy.xl
+
 	if pxy.rc.NatHoleController == nil {
-		pxy.Error("udp port for xtcp is not specified.")
+		xl.Error("udp port for xtcp is not specified.")
 		err = fmt.Errorf("xtcp is not supported in frps")
 		return
 	}
@@ -42,29 +44,51 @@ func (pxy *XtcpProxy) Run() (remoteAddr string, err error) {
 			select {
 			case <-pxy.closeCh:
 				break
-			case sid := <-sidCh:
-				workConn, errRet := pxy.GetWorkConnFromPool()
+			case sidRequest := <-sidCh:
+				sr := sidRequest
+				workConn, errRet := pxy.GetWorkConnFromPool(nil, nil)
 				if errRet != nil {
 					continue
 				}
 				m := &msg.NatHoleSid{
-					Sid: sid,
+					Sid: sr.Sid,
 				}
 				errRet = msg.WriteMsg(workConn, m)
 				if errRet != nil {
-					pxy.Warn("write nat hole sid package error, %v", errRet)
+					xl.Warn("write nat hole sid package error, %v", errRet)
+					workConn.Close()
+					break
 				}
+
+				go func() {
+					raw, errRet := msg.ReadMsg(workConn)
+					if errRet != nil {
+						xl.Warn("read nat hole client ok package error: %v", errRet)
+						workConn.Close()
+						return
+					}
+					if _, ok := raw.(*msg.NatHoleClientDetectOK); !ok {
+						xl.Warn("read nat hole client ok package format error")
+						workConn.Close()
+						return
+					}
+
+					select {
+					case sr.NotifyCh <- struct{}{}:
+					default:
+					}
+				}()
 			}
 		}
 	}()
 	return
 }
 
-func (pxy *XtcpProxy) GetConf() config.ProxyConf {
+func (pxy *XTCPProxy) GetConf() config.ProxyConf {
 	return pxy.cfg
 }
 
-func (pxy *XtcpProxy) Close() {
+func (pxy *XTCPProxy) Close() {
 	pxy.BaseProxy.Close()
 	pxy.rc.NatHoleController.CloseClient(pxy.GetName())
 	errors.PanicToError(func() {
